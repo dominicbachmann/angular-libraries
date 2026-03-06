@@ -1,0 +1,31 @@
+<section class="demo">
+  <h1>Responsive Image Demo</h1>
+  <p>
+    Images are optimized at build time by
+    <code>angular-image-optimizer</code> and served via Angular's
+    <code>NgOptimizedImage</code> directive.
+  </p>
+
+  <h2>Hero — fill mode</h2>
+  <div class="hero-container">
+    <img
+      ngSrc="mountain.jpg"
+      fill
+      priority
+      placeholder
+      alt="Mountain landscape"
+    />
+  </div>
+
+  <h2>Responsive — fixed intrinsic size</h2>
+  <img
+    ngSrc="castle.jpg"
+    width="960"
+    height="640"
+    placeholder
+    sizes="(max-width: 960px) 100vw, 50vw"
+    priority
+    alt="Castle"
+    class="responsive-img"
+  />
+</section>

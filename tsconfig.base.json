@@ -1,0 +1,30 @@
+{
+  "compileOnSave": false,
+  "compilerOptions": {
+    "rootDir": ".",
+    "sourceMap": true,
+    "declaration": false,
+    "moduleResolution": "node",
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "importHelpers": true,
+    "target": "es2015",
+    "module": "esnext",
+    "lib": ["es2020", "dom"],
+    "skipLibCheck": true,
+    "skipDefaultLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "angular-image-optimizer/vite": [
+        "image-optimizer/libs/angular-image-optimizer/src/vite/index.ts"
+      ],
+      "angular-image-optimizer/esbuild": [
+        "image-optimizer/libs/angular-image-optimizer/src/esbuild/index.ts"
+      ],
+      "angular-image-optimizer/angular": [
+        "image-optimizer/libs/angular-image-optimizer/src/angular/index.ts"
+      ]
+    }
+  },
+  "exclude": ["node_modules", "tmp"]
+}

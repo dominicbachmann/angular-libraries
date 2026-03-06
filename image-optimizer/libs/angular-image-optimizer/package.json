@@ -1,0 +1,51 @@
+{
+  "name": "angular-image-optimizer",
+  "version": "0.0.1",
+  "description": "Build-time image optimization for Angular — generates multi-width WebP/AVIF variants and wires them into NgOptimizedImage via a custom IMAGE_LOADER.",
+  "author": "dominicbachmann",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dominicbachmann/angular-libraries"
+  },
+  "homepage": "https://github.com/dominicbachmann/angular-libraries/tree/main/image-optimizer/libs/angular-image-optimizer#readme",
+  "keywords": [
+    "angular",
+    "image",
+    "optimization",
+    "webp",
+    "avif",
+    "esbuild",
+    "NgOptimizedImage",
+    "image-loader"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18.17.0"
+  },
+  "exports": {
+    "./esbuild": {
+      "types": "./esbuild/index.d.ts",
+      "import": "./esbuild/index.js"
+    },
+    "./angular": {
+      "types": "./angular/index.d.ts",
+      "import": "./angular/index.js"
+    }
+  },
+  "peerDependencies": {
+    "@angular/common": ">=17.0.0",
+    "@angular/core": ">=17.0.0",
+    "esbuild": ">=0.19.0"
+  },
+  "peerDependenciesMeta": {
+    "@angular/common": { "optional": true },
+    "@angular/core": { "optional": true },
+    "esbuild": { "optional": true }
+  },
+  "dependencies": {
+    "fast-glob": "^3.3.0",
+    "sharp": "^0.33.0"
+  }
+}
