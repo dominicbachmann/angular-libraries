@@ -1,6 +1,6 @@
 {
   "name": "angular-image-optimizer",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Build-time image optimization for Angular — generates multi-width WebP/AVIF variants and wires them into NgOptimizedImage via a custom IMAGE_LOADER.",
   "author": "dominicbachmann",
   "license": "MIT",
