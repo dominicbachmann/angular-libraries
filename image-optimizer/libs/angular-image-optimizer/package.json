@@ -6,7 +6,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/dominicbachmann/angular-libraries"
+    "url": "git+https://github.com/dominicbachmann/angular-libraries.git"
   },
   "homepage": "https://github.com/dominicbachmann/angular-libraries/tree/main/image-optimizer/libs/angular-image-optimizer#readme",
   "keywords": [
