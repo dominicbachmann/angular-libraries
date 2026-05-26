@@ -60,6 +60,7 @@ export default defineConfig(() => ({
         'fast-glob',
         'crypto',
         'path',
+        'node:fs/promises',
         'virtual:ng-image-manifest',
       ],
     },

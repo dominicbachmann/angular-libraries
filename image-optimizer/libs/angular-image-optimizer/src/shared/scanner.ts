@@ -11,7 +11,7 @@ export interface ScannedImage {
   key: string;
 }
 
-function getGlobBase(pattern: string): string {
+export function getGlobBase(pattern: string): string {
   const parts = pattern.split('/');
   const firstGlobIdx = parts.findIndex((p) => /[*{?]/.test(p));
   return parts.slice(0, firstGlobIdx === -1 ? parts.length : firstGlobIdx).join('/');

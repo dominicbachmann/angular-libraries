@@ -1,9 +1,17 @@
 import path from 'path';
+import fs from 'node:fs/promises';
 import type { Plugin as EsbuildPlugin } from 'esbuild';
 import { VIRTUAL_MODULE_ID } from '../shared/virtual-module';
 import { resolveOptions } from '../shared/options';
 import type { NgImageOptimizerOptions } from '../shared/options';
-import { buildImageAssets } from '../shared/build';
+import {
+  scanImages,
+  buildVariantFilename,
+  buildPlaceholderFilename,
+  getGlobBase,
+} from '../shared/scanner';
+import type { ScannedImage } from '../shared/scanner';
+import { getImageMetadata, resizeImage, generateLqip } from '../shared/processor';
 import type { ImageManifest } from '../shared/manifest';
 
 export type { NgImageOptimizerOptions } from '../shared/options';
@@ -113,17 +121,47 @@ function generateServerManifestModule(
   ].join('\n');
 }
 
+type VariantSpec =
+  | { kind: 'variant'; absolutePath: string; width: number; format: 'webp' | 'avif' }
+  | { kind: 'placeholder'; absolutePath: string };
+
+interface CachedMeta {
+  mtimeMs: number;
+  originalWidth: number;
+  originalHeight: number;
+  placeholder: string;
+}
+
 export function ngImageOptimizerEsbuild(options: NgImageOptimizerOptions = {}): EsbuildPlugin {
   const opts = resolveOptions(options);
 
-  let imageBuffers = new Map<string, Buffer>();
-  let manifest: ImageManifest = { basePath: '', images: {} };
-
-  // Maps plain variant filename → browser URL (e.g. 'mountain-640w.webp' → '/mountain-640w.ABCDEF.webp').
-  // Populated by the browser build's onEnd hook; consumed by the server build's onLoad.
-  // Both builds share this Map via the plugin closure since Angular runs them sequentially
-  // (browser first) using the same plugin instance.
+  // metaCache is mtime-gated as a backstop in case esbuild ever invalidates
+  // the manifest for an unrelated reason; the primary cache is esbuild's own
+  // per-input result cache, driven by the `watchFiles` returned below.
+  const metaCache = new Map<string, CachedMeta>();
+  const variantSpecs = new Map<string, VariantSpec>();
   const hashedVariantPaths = new Map<string, string>();
+
+  let scannedImages: ScannedImage[] = [];
+  let scanRoots: string[] = [];
+
+  async function ensureMeta(absPath: string): Promise<CachedMeta> {
+    const stat = await fs.stat(absPath);
+    const cached = metaCache.get(absPath);
+    if (cached && cached.mtimeMs === stat.mtimeMs) return cached;
+    const [{ width, height }, placeholder] = await Promise.all([
+      getImageMetadata(absPath),
+      generateLqip(absPath),
+    ]);
+    const meta: CachedMeta = {
+      mtimeMs: stat.mtimeMs,
+      originalWidth: width,
+      originalHeight: height,
+      placeholder,
+    };
+    metaCache.set(absPath, meta);
+    return meta;
+  }
 
   return {
     name: 'ng-image-optimizer-esbuild',
@@ -136,11 +174,11 @@ export function ngImageOptimizerEsbuild(options: NgImageOptimizerOptions = {}): 
         build.initialOptions.metafile = true;
       }
 
+      // Cheap: discover image files only. No metadata, no LQIP, no encoding.
       build.onStart(async () => {
         const root = build.initialOptions.absWorkingDir ?? process.cwd();
-        const assets = await buildImageAssets(root, '', opts);
-        manifest = assets.manifest;
-        imageBuffers = assets.imageBuffers;
+        scannedImages = await scanImages(root, opts.include);
+        scanRoots = opts.include.map((p) => path.resolve(root, getGlobBase(p)));
       });
 
       build.onResolve({ filter: MANIFEST_FILTER }, (args) => ({
@@ -154,29 +192,79 @@ export function ngImageOptimizerEsbuild(options: NgImageOptimizerOptions = {}): 
         namespace: ASSET_NAMESPACE,
       }));
 
-      // Serve processed image buffers through esbuild's asset pipeline (browser builds only).
-      // loader:'file' makes esbuild apply assetNames (including [hash]) and return the URL.
-      // Not used for server builds — the server manifest embeds the URLs as string literals.
-      build.onLoad({ filter: /.*/, namespace: ASSET_NAMESPACE }, (args) => {
-        if (isServerBuild) return null;
-        const buffer = imageBuffers.get(args.path);
-        if (!buffer) return null;
-        return { contents: buffer, loader: 'file' };
-      });
-
       // Generate the manifest JS module.
       // Browser: imports each variant via loader:'file' so esbuild applies assetNames hashing.
       // Server:  embeds the browser URLs as string literals to avoid Node.js file-path resolution.
-      build.onLoad({ filter: /.*/, namespace: MANIFEST_NAMESPACE }, () => {
-        if (isServerBuild) {
-          return {
-            contents: generateServerManifestModule(manifest, hashedVariantPaths),
-            loader: 'js',
-          };
-        }
+      // Re-invoked only when a watched source image (or scan dir) changes.
+      build.onLoad({ filter: /.*/, namespace: MANIFEST_NAMESPACE }, async () => {
+        variantSpecs.clear();
+
+        const manifest: ImageManifest = { basePath: '', images: {} };
+        const { widths, formats } = opts;
+        const primaryFormat = formats[0] ?? 'webp';
+
+        await Promise.all(
+          scannedImages.map(async ({ absolutePath, key }) => {
+            const meta = await ensureMeta(absolutePath);
+            const variants: Record<number, { path: string }> = {};
+
+            for (const w of widths) {
+              const filename = buildVariantFilename(key, w, primaryFormat);
+              variants[w] = { path: filename };
+              variantSpecs.set(filename, {
+                kind: 'variant',
+                absolutePath,
+                width: w,
+                format: primaryFormat,
+              });
+            }
+            for (const fmt of formats.slice(1)) {
+              for (const w of widths) {
+                const filename = buildVariantFilename(key, w, fmt);
+                variantSpecs.set(filename, { kind: 'variant', absolutePath, width: w, format: fmt });
+              }
+            }
+            variantSpecs.set(buildPlaceholderFilename(key), { kind: 'placeholder', absolutePath });
+
+            manifest.images[key] = {
+              originalWidth: meta.originalWidth,
+              originalHeight: meta.originalHeight,
+              placeholder: meta.placeholder,
+              variants,
+            };
+          })
+        );
+
+        const contents = isServerBuild
+          ? generateServerManifestModule(manifest, hashedVariantPaths)
+          : generateManifestModule(manifest);
+
         return {
-          contents: generateManifestModule(manifest),
+          contents,
           loader: 'js',
+          watchFiles: scannedImages.map((i) => i.absolutePath),
+          watchDirs: scanRoots,
+        };
+      });
+
+      // Serve processed image buffers through esbuild's asset pipeline (browser builds only).
+      // esbuild caches the result per input id; watchFiles tells it to invalidate only when
+      // the source image actually changes, so unchanged variants are not re-encoded.
+      build.onLoad({ filter: /.*/, namespace: ASSET_NAMESPACE }, async (args) => {
+        if (isServerBuild) return null;
+
+        const spec = variantSpecs.get(args.path);
+        if (!spec) return null;
+
+        const buffer =
+          spec.kind === 'placeholder'
+            ? await resizeImage(spec.absolutePath, 20, 'webp', { webp: 20 })
+            : await resizeImage(spec.absolutePath, spec.width, spec.format, opts.quality);
+
+        return {
+          contents: buffer,
+          loader: 'file',
+          watchFiles: [spec.absolutePath],
         };
       });
 
