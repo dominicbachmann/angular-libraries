@@ -1,12 +1,13 @@
 {
   "name": "angular-image-optimizer",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Build-time image optimization for Angular — generates multi-width WebP/AVIF variants and wires them into NgOptimizedImage via a custom IMAGE_LOADER.",
   "author": "dominicbachmann",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/dominicbachmann/angular-libraries.git"
+    "url": "git+https://github.com/dominicbachmann/angular-libraries.git",
+    "directory": "image-optimizer/libs/angular-image-optimizer"
   },
   "homepage": "https://github.com/dominicbachmann/angular-libraries/tree/main/image-optimizer/libs/angular-image-optimizer#readme",
   "keywords": [
