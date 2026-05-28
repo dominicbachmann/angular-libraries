@@ -132,6 +132,11 @@ interface CachedMeta {
   placeholder: string;
 }
 
+interface CachedBuffer {
+  mtimeMs: number;
+  buffer: Buffer;
+}
+
 export function ngImageOptimizerEsbuild(options: NgImageOptimizerOptions = {}): EsbuildPlugin {
   const opts = resolveOptions(options);
 
@@ -139,6 +144,11 @@ export function ngImageOptimizerEsbuild(options: NgImageOptimizerOptions = {}): 
   // the manifest for an unrelated reason; the primary cache is esbuild's own
   // per-input result cache, driven by the `watchFiles` returned below.
   const metaCache = new Map<string, CachedMeta>();
+  // bufferCache holds encoded variant buffers across rebuilds. esbuild
+  // invalidates `loader: 'file'` onLoad results on every rebuild regardless
+  // of `watchFiles`, so without this cache sharp re-encodes every variant
+  // on every TS edit during `ng serve`.
+  const bufferCache = new Map<string, CachedBuffer>();
   const variantSpecs = new Map<string, VariantSpec>();
   const hashedVariantPaths = new Map<string, string>();
 
@@ -248,18 +258,28 @@ export function ngImageOptimizerEsbuild(options: NgImageOptimizerOptions = {}): 
       });
 
       // Serve processed image buffers through esbuild's asset pipeline (browser builds only).
-      // esbuild caches the result per input id; watchFiles tells it to invalidate only when
-      // the source image actually changes, so unchanged variants are not re-encoded.
+      // esbuild invalidates `loader: 'file'` onLoad results on every rebuild even when
+      // `watchFiles` is set, so we keep our own mtime-gated buffer cache to avoid
+      // re-encoding through sharp on unrelated rebuilds (e.g. TS edits during `ng serve`).
       build.onLoad({ filter: /.*/, namespace: ASSET_NAMESPACE }, async (args) => {
         if (isServerBuild) return null;
 
         const spec = variantSpecs.get(args.path);
         if (!spec) return null;
 
-        const buffer =
-          spec.kind === 'placeholder'
-            ? await resizeImage(spec.absolutePath, 20, 'webp', { webp: 20 })
-            : await resizeImage(spec.absolutePath, spec.width, spec.format, opts.quality);
+        const stat = await fs.stat(spec.absolutePath);
+        const cached = bufferCache.get(args.path);
+
+        let buffer: Buffer;
+        if (cached && cached.mtimeMs === stat.mtimeMs) {
+          buffer = cached.buffer;
+        } else {
+          buffer =
+            spec.kind === 'placeholder'
+              ? await resizeImage(spec.absolutePath, 20, 'webp', { webp: 20 })
+              : await resizeImage(spec.absolutePath, spec.width, spec.format, opts.quality);
+          bufferCache.set(args.path, { mtimeMs: stat.mtimeMs, buffer });
+        }
 
         return {
           contents: buffer,
